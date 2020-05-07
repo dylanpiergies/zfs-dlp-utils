@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -e
+
+EMAIL="$1"
+
+function send_email() {
+  mail -M text/html -r "ZFS Pool Status Checker <zpool-status-checker@$(hostname -f)>" \
+    -s "zpool status on $(hostname)" "$EMAIL" <<EOF
+<!DOCTYPE HTML>
+<head>
+<title>ZFS Pool Status on $HOSTNAME</title>
+</head>
+<body>
+<pre>${ZPOOL_STATUS}</pre>
+</body>
+</html>
+EOF
+}
+
+function status_present() {
+  ZPOOL_STATUS="$(zpool status)"
+  grep '^\s*status:' <<< "$ZPOOL_STATUS" > /dev/null
+  return $?
+}
+
+EMAIL_SENT=false
+
+while true; do
+  if status_present; then
+    if [[ "$EMAIL_SENT" == 'false' ]]; then
+      send_email
+      EMAIL_SENT=true
+    fi
+  else
+    EMAIL_SENT=false
+  fi
+
+  sleep 1
+done

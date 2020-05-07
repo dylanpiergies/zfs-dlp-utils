@@ -1,0 +1,90 @@
+#!/bin/bash
+
+set -e -o pipefail
+
+LOCAL_FILESYSTEM="$1"
+REMOTE_HOST="$2"
+REMOTE_FILESYSTEM="$3"
+RETENTION=7
+
+function print_usage() {
+  echo "Usage: $0 LOCAL_FILESYSTEM REMOTE_HOST REMOTE_FILESYSTEM" >&2
+}
+
+if [[ -z "$LOCAL_FILESYSTEM" ]]; then
+  print_usage
+  exit 1
+fi
+
+if [[ -z "$REMOTE_HOST" ]]; then
+  print_usage
+  exit 1
+fi
+
+if [[ -z "$REMOTE_FILESYSTEM" ]]; then
+  print_usage
+  exit 1
+fi
+
+if [[ -z "$SNAPSHOT_PREFIX" ]]; then
+  SNAPSHOT_PREFIX='backup-'
+fi
+
+echo "Starting backup of $LOCAL_FILESYSTEM to $REMOTE_FILESYSTEM on $REMOTE_HOST."
+
+NEW_LOCAL_SNAPSHOT="$LOCAL_FILESYSTEM@$SNAPSHOT_PREFIX$(date -u +%Y-%m-%d-%H:%M:%S.%N)"
+echo "Creating new local snapshot $NEW_LOCAL_SNAPSHOT."
+zfs snapshot "$NEW_LOCAL_SNAPSHOT"
+
+LATEST_REMOTE_SNAPSHOT=$(ssh "$REMOTE_HOST" zfs list -H -o name -S creation -t snapshot "$REMOTE_FILESYSTEM" | head -n1)
+
+if [[ -z "$LATEST_REMOTE_SNAPSHOT" ]]; then
+  echo "No snapshots of $REMOTE_FILESYSTEM on $REMOTE_HOST. Sending full stream..."
+  zfs send "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -F "$REMOTE_FILESYSTEM"
+  echo "Done."
+else
+  echo "Latest snapshot of $REMOTE_FILESYSTEM on $REMOTE_HOST is $LATEST_REMOTE_SNAPSHOT."
+
+  mapfile -t LOCAL_SNAPSHOTS <<< $(zfs list -H -o name -S creation -t snapshot "$LOCAL_FILESYSTEM")
+  for LOCAL_SNAPSHOT in "${LOCAL_SNAPSHOTS[@]}"; do
+    if [[ "$(cut -d'@' -f2 <<< "$LOCAL_SNAPSHOT")" == "$(cut -d'@' -f2 <<< "$LATEST_REMOTE_SNAPSHOT")" ]]; then
+      MATCHING_LOCAL_SNAPSHOT="$LOCAL_SNAPSHOT"
+      break
+    fi
+  done
+
+  if [[ -z "$MATCHING_LOCAL_SNAPSHOT" ]]; then
+    echo "Error: Could not find local snapshot matching latest $LATEST_REMOTE_SNAPSHOT on $REMOTE_HOST." >&2
+    exit 2
+  fi
+
+  echo "Sending incremental stream from $MATCHING_LOCAL_SNAPSHOT to $NEW_LOCAL_SNAPSHOT..."
+  zfs send -i "$MATCHING_LOCAL_SNAPSHOT" "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -F "$REMOTE_FILESYSTEM"
+  echo "Done."
+fi
+
+if (( "$RETENTION" > 1 )); then
+  mapfile -t LOCAL_SNAPSHOTS <<< $(zfs list -H -o name -S creation -t snapshot "$LOCAL_FILESYSTEM")
+  COUNT=0
+  for LOCAL_SNAPSHOT in "${LOCAL_SNAPSHOTS[@]}"; do
+    if [[ "$LOCAL_SNAPSHOT" == "$LOCAL_FILESYSTEM@$SNAPSHOT_PREFIX"* ]]; then
+      COUNT=$((COUNT+1))
+      if (( "$COUNT" > "$RETENTION" )); then
+        echo "Destroying outdated local snapshot $LOCAL_SNAPSHOT."
+        zfs destroy "$LOCAL_SNAPSHOT"
+      fi
+    fi
+  done
+
+  mapfile -t REMOTE_SNAPSHOTS <<< $(ssh "$REMOTE_HOST" zfs list -H -o name -S creation -t snapshot "$REMOTE_FILESYSTEM")
+  COUNT=0
+  for REMOTE_SNAPSHOT in "${REMOTE_SNAPSHOTS[@]}"; do
+    if [[ "$REMOTE_SNAPSHOT" == "$REMOTE_FILESYSTEM@$SNAPSHOT_PREFIX"* ]]; then
+      COUNT=$((COUNT+1))
+      if (( "$COUNT" > "$RETENTION" )); then
+        echo "Destroying outdated remote snapshot $REMOTE_SNAPSHOT."
+        ssh "$REMOTE_HOST" zfs destroy "$REMOTE_SNAPSHOT"
+      fi
+    fi
+  done
+fi
