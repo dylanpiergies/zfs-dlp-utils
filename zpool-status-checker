@@ -36,11 +36,15 @@ EMAIL_SENT=false
 while true; do
   if status_present; then
     if [[ "$EMAIL_SENT" == 'false' ]]; then
+      echo 'ZFS pool status message detected. Sending notification.'
       send_email
       EMAIL_SENT=true
     fi
   else
-    EMAIL_SENT=false
+    if [[ "$EMAIL_SENT" == 'true' ]]; then
+      echo 'ZFS pool status message cleared.'
+      EMAIL_SENT=false
+    fi
   fi
 
   sleep 1

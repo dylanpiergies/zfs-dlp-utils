@@ -1,0 +1,8 @@
+[Unit]
+Description=Check zpool status for problems
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/usr/local/etc/zpool-status-checker.conf
+ExecStart=/usr/local/sbin/zpool-status-checker
