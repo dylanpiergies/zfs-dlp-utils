@@ -2,11 +2,18 @@
 
 set -e
 
-EMAIL="$1"
+if [[ -z "$MAILTO" ]]; then
+  MAILTO="$1"
+fi
+
+if [[ -z "$MAILTO" ]]; then
+  echo 'Error: MAILTO not set and no parameter given.' >&2
+  exit 1
+fi
 
 function send_email() {
   mail -M text/html -r "ZFS Pool Status Checker <zpool-status-checker@$(hostname -f)>" \
-    -s "zpool status on $(hostname)" "$EMAIL" <<EOF
+    -s "zpool status on $(hostname)" "$MAILTO" <<EOF
 <!DOCTYPE HTML>
 <head>
 <title>ZFS Pool Status on $HOSTNAME</title>
