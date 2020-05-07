@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up a ZFS filesystem
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zfs-remote-backup $LOCAL_FILESYSTEM $REMOTE_HOST $REMOTE_FILESYSTEM
+TimeoutStartSec=infinity
