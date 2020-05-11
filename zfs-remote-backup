@@ -40,7 +40,7 @@ LATEST_REMOTE_SNAPSHOT=$(ssh "$REMOTE_HOST" zfs list -H -o name -S creation -t s
 
 if [[ -z "$LATEST_REMOTE_SNAPSHOT" ]]; then
   echo "No snapshots of $REMOTE_FILESYSTEM on $REMOTE_HOST. Sending full stream..."
-  zfs send "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -F "$REMOTE_FILESYSTEM"
+  zfs send -v "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -Fv "$REMOTE_FILESYSTEM"
   echo "Done."
 else
   echo "Latest snapshot of $REMOTE_FILESYSTEM on $REMOTE_HOST is $LATEST_REMOTE_SNAPSHOT."
@@ -59,7 +59,7 @@ else
   fi
 
   echo "Sending incremental stream from $MATCHING_LOCAL_SNAPSHOT to $NEW_LOCAL_SNAPSHOT..."
-  zfs send -i "$MATCHING_LOCAL_SNAPSHOT" "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -F "$REMOTE_FILESYSTEM"
+  zfs send -v -i "$MATCHING_LOCAL_SNAPSHOT" "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -Fv "$REMOTE_FILESYSTEM"
   echo "Done."
 fi
 
@@ -71,7 +71,7 @@ if (( "$RETENTION" > 1 )); then
       COUNT=$((COUNT+1))
       if (( "$COUNT" > "$RETENTION" )); then
         echo "Destroying outdated local snapshot $LOCAL_SNAPSHOT."
-        zfs destroy "$LOCAL_SNAPSHOT"
+        zfs destroy -v "$LOCAL_SNAPSHOT"
       fi
     fi
   done
@@ -83,7 +83,7 @@ if (( "$RETENTION" > 1 )); then
       COUNT=$((COUNT+1))
       if (( "$COUNT" > "$RETENTION" )); then
         echo "Destroying outdated remote snapshot $REMOTE_SNAPSHOT."
-        ssh "$REMOTE_HOST" zfs destroy "$REMOTE_SNAPSHOT"
+        ssh "$REMOTE_HOST" zfs destroy -v "$REMOTE_SNAPSHOT"
       fi
     fi
   done
