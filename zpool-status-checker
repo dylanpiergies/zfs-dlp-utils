@@ -11,6 +11,8 @@ if [[ -z "$MAILTO" ]]; then
   exit 1
 fi
 
+set -u
+
 function send_email() {
   mail -M text/html -r "ZFS Pool Status Checker <zpool-status-checker@$(hostname -f)>" \
     -s "zpool status on $(hostname)" "$MAILTO" <<EOF
