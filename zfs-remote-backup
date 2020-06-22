@@ -30,6 +30,8 @@ if [[ -z "$SNAPSHOT_PREFIX" ]]; then
   SNAPSHOT_PREFIX='backup-'
 fi
 
+set -u
+
 echo "Starting backup of $LOCAL_FILESYSTEM to $REMOTE_FILESYSTEM on $REMOTE_HOST."
 
 NEW_LOCAL_SNAPSHOT="$LOCAL_FILESYSTEM@$SNAPSHOT_PREFIX$(date -u +%Y-%m-%d-%H:%M:%S.%N)"
