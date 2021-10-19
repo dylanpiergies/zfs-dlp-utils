@@ -32,17 +32,31 @@ fi
 
 set -u
 
+echo "Checking connectivity to $REMOTE_HOST..."
+ssh "$REMOTE_HOST" true
+
 echo "Starting backup of $LOCAL_FILESYSTEM to $REMOTE_FILESYSTEM on $REMOTE_HOST."
+
+set +e
+RECEIVE_RESUME_TOKEN=$(ssh "$REMOTE_HOST" zfs get -H -o value receive_resume_token "$REMOTE_FILESYSTEM")
+set -e
+
+if [[ -n "$RECEIVE_RESUME_TOKEN" ]] && [[ "$RECEIVE_RESUME_TOKEN" != '-' ]]; then
+  echo "Target filesystem has receive_resume_token property set. Resuming interrupted receive..."
+  zfs send -w -t "$RECEIVE_RESUME_TOKEN" | ssh "$REMOTE_HOST" zfs receive -s -v "$REMOTE_FILESYSTEM"
+fi
 
 NEW_LOCAL_SNAPSHOT="$LOCAL_FILESYSTEM@$SNAPSHOT_PREFIX$(date -u +%Y-%m-%d-%H:%M:%S.%N)"
 echo "Creating new local snapshot $NEW_LOCAL_SNAPSHOT."
 zfs snapshot "$NEW_LOCAL_SNAPSHOT"
 
+set +e
 LATEST_REMOTE_SNAPSHOT=$(ssh "$REMOTE_HOST" zfs list -H -o name -S creation -t snapshot "$REMOTE_FILESYSTEM" | head -n1)
+set -e
 
 if [[ -z "$LATEST_REMOTE_SNAPSHOT" ]]; then
   echo "No snapshots of $REMOTE_FILESYSTEM on $REMOTE_HOST. Sending full stream..."
-  zfs send "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -Fv "$REMOTE_FILESYSTEM"
+  zfs send -w "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -s -u -v "$REMOTE_FILESYSTEM"
   echo "Done."
 else
   echo "Latest snapshot of $REMOTE_FILESYSTEM on $REMOTE_HOST is $LATEST_REMOTE_SNAPSHOT."
@@ -61,7 +75,7 @@ else
   fi
 
   echo "Sending incremental stream from $MATCHING_LOCAL_SNAPSHOT to $NEW_LOCAL_SNAPSHOT..."
-  zfs send -i "$MATCHING_LOCAL_SNAPSHOT" "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -Fv "$REMOTE_FILESYSTEM"
+  zfs send -w -i "$MATCHING_LOCAL_SNAPSHOT" "$NEW_LOCAL_SNAPSHOT" | ssh "$REMOTE_HOST" zfs receive -s -v "$REMOTE_FILESYSTEM"
   echo "Done."
 fi
 
